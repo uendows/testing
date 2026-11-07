@@ -1,0 +1,193 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#172033">
+<title>Python Lab for iPad</title>
+<style>
+:root{color-scheme:dark;--bg:#0d1321;--panel:#172033;--panel2:#202c43;--text:#edf2fb;--muted:#aab7cc;--accent:#79b8ff;--line:#34435d}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--text);font:16px/1.5 -apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif}
+header{padding:20px 16px 12px;max-width:1050px;margin:auto}
+h1{font-size:1.45rem;margin:0 0 5px}
+.sub{color:var(--muted);font-size:.92rem}
+main{max-width:1050px;margin:auto;padding:8px 16px 40px;display:grid;gap:14px}
+.panel{background:var(--panel);border:1px solid var(--line);border-radius:14px;padding:14px;min-width:0}
+h2{font-size:1.02rem;margin:0 0 10px}
+.clock{font:600 clamp(2rem,8vw,3.4rem)/1.2 ui-monospace,monospace;letter-spacing:.03em}
+.clockrow{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap}
+.status{color:var(--muted);font-size:.85rem}
+textarea{width:100%;min-height:250px;resize:vertical;background:#0a1020;color:#e8f0ff;border:1px solid var(--line);border-radius:10px;padding:12px;font:14px/1.55 ui-monospace,SFMono-Regular,Menlo,monospace;tab-size:4}
+button{border:0;border-radius:9px;padding:11px 15px;background:var(--accent);color:#071321;font-weight:700;font-size:.95rem}
+button.secondary{background:var(--panel2);color:var(--text);border:1px solid var(--line)}
+button:disabled{opacity:.5}
+.controls{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0}
+pre{white-space:pre-wrap;overflow-wrap:anywhere;background:#0a1020;border:1px solid var(--line);border-radius:10px;padding:12px;min-height:70px;margin:0;font:13px/1.5 ui-monospace,monospace}
+#plot{width:100%;min-height:30px;background:#fff;border-radius:8px;display:block}
+.note{color:var(--muted);font-size:.88rem}
+a{color:var(--accent)}
+@media(min-width:760px){main{grid-template-columns:1fr 1fr}.wide{grid-column:1/-1}}
+</style>
+</head>
+<body>
+<header>
+  <h1>Python Lab</h1>
+  <div class="sub">iPadのブラウザでPythonを実行・グラフ表示できる簡易実験室</div>
+</header>
+<main>
+  <section class="panel wide">
+    <div class="clockrow">
+      <div><h2>リアルタイム時計</h2><div id="clock" class="clock">--:--:--</div><div id="date" class="status">時刻を読み込み中…</div></div>
+      <div id="pyStatus" class="status">Python準備中…</div>
+    </div>
+  </section>
+
+  <section class="panel wide">
+    <h2>Pythonコード</h2>
+    <textarea id="code" autocapitalize="off" autocomplete="off" autocorrect="off" spellcheck="false">import time
+import asyncio
+import matplotlib.pyplot as plt
+
+# 現在時刻を1秒ごとに表示（画面を止めずに更新）
+for i in range(5):
+    print(time.strftime("%H:%M:%S"))
+    await asyncio.sleep(1)
+
+# matplotlibでグラフを作成
+x = [0, 1, 2, 3, 4, 5]
+y = [n**2 for n in x]
+
+plt.figure(figsize=(6, 3.5))
+plt.plot(x, y, marker="o")
+plt.title("y = x^2")
+plt.xlabel("x")
+plt.ylabel("y")
+plt.grid(True)
+plt.show()</textarea>
+    <div class="controls">
+      <button id="run" disabled>▶ 実行</button>
+      <button id="stop" class="secondary" disabled>停止</button>
+      <button id="reset" class="secondary">初期コードに戻す</button>
+      <button id="clear" class="secondary">出力を消去</button>
+    </div>
+    <div class="note">時間のかかる繰り返し処理では <code>time.sleep()</code> の代わりに <code>await asyncio.sleep()</code> を使うと、ブラウザ画面を更新しながら実行できます。</div>
+  </section>
+
+  <section class="panel">
+    <h2>実行結果（print / エラー）</h2>
+    <pre id="output">Pythonを準備しています…</pre>
+  </section>
+  <section class="panel">
+    <h2>Matplotlibグラフ</h2>
+    <div id="plotArea"><div class="note">グラフはここに表示されます。</div></div>
+  </section>
+  <section class="panel wide">
+    <h2>使い方・注意</h2>
+    <div class="note">
+      ① インターネットに接続した状態でこのページを開きます。初回はPython本体などを読み込むため少し時間がかかります。<br>
+      ② コードを書き換えて「実行」を押します。Pythonの計算はブラウザ内で動作します。<br>
+      ③ Matplotlibの <code>plt.show()</code> で作ったグラフは下の領域に表示されます。<br><br>
+      このページはPyodideをCDNから読み込みます。オフラインでは初回起動できません。iPadではSafariまたはChromeの最新版を推奨します。重い計算や長時間の処理ではブラウザが遅くなることがあります。
+    </div>
+  </section>
+</main>
+
+<script src="https://cdn.jsdelivr.net/pyodide/v0.27.7/full/pyodide.js"></script>
+<script>
+const $ = id => document.getElementById(id);
+const initialCode = $('code').value;
+let pyodide = null;
+let running = false;
+let runToken = 0;
+
+function updateClock(){
+  const d = new Date();
+  $('clock').textContent = d.toLocaleTimeString('ja-JP',{hour12:false});
+  $('date').textContent = d.toLocaleDateString('ja-JP',{year:'numeric',month:'long',day:'numeric',weekday:'long'});
+}
+updateClock();
+setInterval(updateClock, 200);
+
+function appendOutput(s){
+  const out = $('output');
+  out.textContent += s;
+  out.scrollTop = out.scrollHeight;
+}
+async function init(){
+  try{
+    pyodide = await loadPyodide({
+      stdout: s => appendOutput(s + "\n"),
+      stderr: s => appendOutput("エラー: " + s + "\n")
+    });
+    $('pyStatus').textContent = "Pythonを読み込みました。Matplotlibを準備中…";
+    await pyodide.loadPackage("matplotlib");
+    $('pyStatus').textContent = "準備完了";
+    $('run').disabled = false;
+    $('output').textContent = "準備完了。コードを実行できます。\n";
+  }catch(e){
+    $('pyStatus').textContent = "読み込みに失敗";
+    $('output').textContent = String(e) + "\nインターネット接続を確認してページを再読み込みしてください。";
+  }
+}
+init();
+
+$('run').addEventListener('click', async ()=>{
+  if(!pyodide || running) return;
+  running = true;
+  const token = ++runToken;
+  $('run').disabled = true;
+  $('stop').disabled = false;
+  $('output').textContent = "";
+  $('plotArea').innerHTML = '<div class="note">実行中…</div>';
+  try{
+    // 各実行の前に古いグラフを閉じる
+    await pyodide.runPythonAsync("import matplotlib.pyplot as plt\nplt.close('all')");
+    await pyodide.runPythonAsync($('code').value);
+    if(token === runToken){
+      const png = pyodide.runPython(`
+import io
+import matplotlib.pyplot as plt
+_figs = [plt.figure(n) for n in plt.get_fignums()]
+_buf = io.BytesIO()
+if _figs:
+    _figs[-1].savefig(_buf, format="png", dpi=130, bbox_inches="tight")
+    _buf.getvalue()
+else:
+    b""
+`);
+      let bytes = png.toJs();
+      if(bytes.length){
+        let binary = "";
+        for(let i=0;i<bytes.length;i++) binary += String.fromCharCode(bytes[i]);
+        $('plotArea').innerHTML = '<img id="plot" alt="Matplotlibのグラフ">';
+        $('plot').src = 'data:image/png;base64,' + btoa(binary);
+      }else{
+        $('plotArea').innerHTML = '<div class="note">この実行ではグラフは作成されませんでした。</div>';
+      }
+      bytes = null;
+      png.destroy();
+    }
+  }catch(e){
+    if(token === runToken) appendOutput("\n" + String(e));
+  }finally{
+    if(token === runToken){
+      running = false;
+      $('run').disabled = false;
+      $('stop').disabled = true;
+    }
+  }
+});
+$('stop').addEventListener('click', ()=>{
+  // Pyodideの実行中断は環境依存のため、停止要求として扱い次の実行を防ぐ
+  runToken++;
+  running = false;
+  $('run').disabled = false;
+  $('stop').disabled = true;
+  appendOutput("\n停止要求を受け付けました。処理がすぐに止まらない場合はページを再読み込みしてください。\n");
+});
+$('reset').addEventListener('click', ()=>{$('code').value = initialCode;});
+$('clear').addEventListener('click', ()=>{$('output').textContent = ""; $('plotArea').innerHTML = '<div class="note">グラフはここに表示されます。</div>';});
+</script>
+</body>
+</html>
